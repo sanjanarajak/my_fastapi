@@ -1,0 +1,4 @@
+id,name,role,department
+1,Alice,Engineer,Tech
+2,Bob,Designer,Design
+3,Charlie,Manager,Ops
