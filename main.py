@@ -48,6 +48,6 @@ def send_message(payload: MessagePayload):
         "reply": bot_reply # Handled dynamically by handleSubmit in ChatWindow
     }
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
