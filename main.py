@@ -1,8 +1,22 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict
 
 app = FastAPI()
+
+# ---- CORS Configuration ----
+# For production, replace ["*"] with your actual frontend URLs, e.g., ["http://localhost:3000"]
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
+    allow_headers=["*"],  # Allows all headers (Content-Type, Authorization, etc.)
+)
+# ----------------------------
 
 # Matches your frontend payload structure
 class MessagePayload(BaseModel):
@@ -34,6 +48,6 @@ def send_message(payload: MessagePayload):
         "reply": bot_reply # Handled dynamically by handleSubmit in ChatWindow
     }
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
