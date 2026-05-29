@@ -1,59 +1,50 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict
+import pandas as pd
 import os
-import uvicorn
 
 app = FastAPI()
 
-# ---- CORS Configuration ----
-# For production, replace ["*"] with your actual frontend URLs, e.g., ["http://localhost:3000"]
-origins = ["*"]
-
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
-    allow_headers=["*"],  # Allows all headers (Content-Type, Authorization, etc.)
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# ----------------------------
 
-# Matches your frontend payload structure
-class MessagePayload(BaseModel):
-    message: str
+# Model
+class Student(BaseModel):
+    name: str
+    education: str
+    skills: str
+    interests: str
+    marks: str
+    certifications: str
+    ai_response: str
 
-# Aligned mock database: Changed "message" key to "text" to match your UI mapping!
-chat_history: List[Dict[str, str]] = [
-    {"sender": "bot", "text": "Hello! How can I help you today?"}
-]
+CSV_FILE = "career_data.csv"
 
-@app.get("/chat/load-history")
-def load_history():
-    """Returns the chat history list matching frontend property names."""
-    return {"status": "success", "history": chat_history}
-
-@app.post("/chat/message")
-def send_message(payload: MessagePayload):
-    """Receives a user message, stores it, and returns a response matching the UI."""
-    # 1. Save user message to history using 'text'
-    chat_history.append({"sender": "user", "text": payload.message})
-    
-    # 2. Simulate a basic bot reply
-    bot_reply = f"Received your message: '{payload.message}'"
-    chat_history.append({"sender": "bot", "text": bot_reply})
-    
+# GET API
+@app.get("/")
+def home():
     return {
-        "status": "success",
-        "user_message": payload.message,
-        "reply": bot_reply # Handled dynamically by handleSubmit in ChatWindow
+        "message": "FastAPI Career Guidance API Running"
     }
 
-# Fix: Corrected syntax typo (__name__ and __main__) and added dynamic port allocation
-if __name__ == "__main__":
-    # Pull the port assigned by Railway, default to 8000 for local development
-    port = int(os.environ.get("PORT", 8000))
-    
-    # Force host to 0.0.0.0 to allow Railway's proxy network to connect
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+# POST API
+@app.post("/career")
+def save_data(student: Student):
+
+    data = pd.DataFrame([student.dict()])
+
+    if os.path.exists(CSV_FILE):
+        data.to_csv(CSV_FILE, mode='a', header=False, index=False)
+    else:
+        data.to_csv(CSV_FILE, index=False)
+
+    return {
+        "message": "Data Saved Successfully"
+    }
