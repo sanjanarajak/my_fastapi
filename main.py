@@ -28,10 +28,30 @@ class Student(BaseModel):
 CSV_FILE = "career_data.csv"
 
 # GET API
-@app.get("/")
-def home():
+@app.get("/career/load-history")
+def load_history():
+
+    history = {}
+
+    if os.path.exists(CSV_FILE):
+
+        data = pd.read_csv(CSV_FILE)
+
+        for index, row in data.iterrows():
+
+            history[index] = {
+                "name": row["name"],
+                "education": row["education"],
+                "skills": row["skills"],
+                "interests": row["interests"],
+                "marks": row["marks"],
+                "certifications": row["certifications"],
+                "ai_response": row["ai_response"]
+            }
+
     return {
-        "message": "FastAPI Career Guidance API Running"
+        "status": "success",
+        "history": history
     }
 
 # POST API
@@ -41,9 +61,17 @@ def save_data(student: Student):
     data = pd.DataFrame([student.dict()])
 
     if os.path.exists(CSV_FILE):
-        data.to_csv(CSV_FILE, mode='a', header=False, index=False)
+        data.to_csv(
+            CSV_FILE,
+            mode="a",
+            header=False,
+            index=False
+        )
     else:
-        data.to_csv(CSV_FILE, index=False)
+        data.to_csv(
+            CSV_FILE,
+            index=False
+        )
 
     return {
         "message": "Data Saved Successfully"
