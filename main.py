@@ -3,9 +3,9 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import AliasChoices, BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
 
 app = FastAPI(
@@ -30,7 +30,7 @@ class Student(BaseModel):
     name: str = Field(
         validation_alias=AliasChoices("name", "full_name", "Full Name", "Name")
     )
-    email: EmailStr | None = Field(
+    email: str | None = Field(
         default=None,
         validation_alias=AliasChoices("email", "Email", "email_address", "Email Address"),
     )
@@ -83,6 +83,125 @@ def split_values(value: Any) -> list[str]:
     ]
 
 
+FIELD_ALIASES = {
+    "name": {
+        "name",
+        "full_name",
+        "full name",
+        "student name",
+        "student_name",
+        "your name",
+        "Name",
+        "Full Name",
+    },
+    "email": {"email", "email address", "email_address", "Email", "Email Address"},
+    "education": {"education", "qualification", "class", "degree", "Education"},
+    "skills": {"skills", "technical skills", "skill", "Skills"},
+    "streams": {"streams", "stream", "career stream", "branch", "Streams", "Stream"},
+    "interests": {
+        "interests",
+        "interest",
+        "career interests",
+        "area of interest",
+        "Interests",
+        "Interest",
+    },
+    "marks": {
+        "marks",
+        "academic marks",
+        "academic_marks",
+        "score",
+        "percentage",
+        "Marks",
+        "Academic Marks",
+    },
+    "certifications": {
+        "certifications",
+        "certification",
+        "courses",
+        "certificate",
+        "Certifications",
+    },
+    "ai_response": {
+        "ai_response",
+        "ai response",
+        "gemini_response",
+        "gemini response",
+        "career recommendation",
+        "career_recommendation",
+        "recommended career",
+        "results",
+        "result",
+        "AI Response",
+        "Gemini Response",
+        "Career Recommendation",
+    },
+    "created_at": {"created_at", "created at", "timestamp", "Timestamp"},
+    "source": {"source", "Source"},
+}
+
+
+def normalize_key(key: str) -> str:
+    return str(key).strip().replace("_", " ").lower()
+
+
+NORMALIZED_ALIASES = {
+    normalize_key(alias): canonical
+    for canonical, aliases in FIELD_ALIASES.items()
+    for alias in aliases
+}
+
+
+def stringify_value(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, list):
+        return ", ".join(str(item).strip() for item in value if str(item).strip())
+
+    if isinstance(value, dict):
+        for key in ("value", "text", "label", "answer"):
+            if key in value:
+                return stringify_value(value[key])
+        return ", ".join(
+            stringify_value(item) for item in value.values() if stringify_value(item)
+        )
+
+    return str(value).strip()
+
+
+def extract_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, list):
+        if not payload:
+            return {}
+        payload = payload[-1]
+
+    if not isinstance(payload, dict):
+        return {}
+
+    for key in ("body", "payload", "data", "row", "record", "fields", "values"):
+        nested = payload.get(key)
+        if isinstance(nested, (dict, list)):
+            return extract_payload(nested)
+
+    return payload
+
+
+def normalize_student_payload(payload: Any) -> dict[str, Any]:
+    row = extract_payload(payload)
+    normalized: dict[str, Any] = {}
+
+    for key, value in row.items():
+        canonical = NORMALIZED_ALIASES.get(normalize_key(key))
+        if canonical:
+            normalized[canonical] = stringify_value(value)
+
+    if "source" not in normalized:
+        normalized["source"] = "ActivePieces"
+
+    return normalized
+
+
 def read_career_data() -> pd.DataFrame:
     columns = [
         "name",
@@ -123,6 +242,33 @@ def value_counts(data: pd.DataFrame, column: str, multi_value: bool = False) -> 
 
     counts = pd.Series(values).value_counts().head(10)
     return [{"label": label, "count": int(count)} for label, count in counts.items()]
+
+
+def save_student_record(student: Student) -> dict[str, Any]:
+    existing_data = read_career_data()
+    new_data = pd.DataFrame([student.model_dump()])
+    data = pd.concat([existing_data, new_data], ignore_index=True)
+    data.to_csv(CSV_FILE, index=False)
+
+    return student.model_dump()
+
+
+def parse_student(payload: Any) -> Student:
+    normalized_payload = normalize_student_payload(payload)
+
+    try:
+        return Student.model_validate(normalized_payload or payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Webhook payload must include a student name.",
+                "received_fields": list(extract_payload(payload).keys())
+                if isinstance(extract_payload(payload), dict)
+                else [],
+                "errors": exc.errors(),
+            },
+        ) from exc
 
 
 @app.get("/")
@@ -192,15 +338,24 @@ def dashboard():
 
 
 @app.post("/career")
-def save_data(student: Student):
-    existing_data = read_career_data()
-    new_data = pd.DataFrame([student.model_dump()])
-    data = pd.concat([existing_data, new_data], ignore_index=True)
-
-    data.to_csv(CSV_FILE, index=False)
-
+def save_data(payload: Any = Body(...)):
+    student = parse_student(payload)
+    saved_student = save_student_record(student)
     return {
         "status": "success",
         "message": "Career data saved successfully",
-        "student": student.model_dump(),
+        "student": saved_student,
+    }
+
+
+@app.post("/webhook")
+@app.post("/activepieces")
+@app.post("/activepieces/webhook")
+def activepieces_webhook(payload: Any = Body(...)):
+    student = parse_student(payload)
+    saved_student = save_student_record(student)
+    return {
+        "status": "success",
+        "message": "ActivePieces webhook received",
+        "student": saved_student,
     }
